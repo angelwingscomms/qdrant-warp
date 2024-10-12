@@ -63,6 +63,11 @@ async fn warp() -> shuttle_warp::ShuttleWarp<(impl Reply,)> {
 
     // println!("create collection res: {}", res);
 
+    let cors = warp::cors()
+        .allow_any_origin()
+        .allow_methods(vec!["GET", "POST", "PUT", "DELETE"])
+        .allow_headers(vec!["Content-Type"]);
+
     let get_route = warp::path::end()
         .and(warp::get())
         .and(warp::query::<ItemQuery>())
@@ -87,7 +92,7 @@ async fn warp() -> shuttle_warp::ShuttleWarp<(impl Reply,)> {
     let search_route = warp::path("search")
         .and(warp::path::end())
         .and(warp::post())
-        .and(warp::body::bytes())
+        .and(warp::body::json::<SearchQuery>())
         .and_then(handle_search);
 
     let routes = get_route
@@ -95,6 +100,7 @@ async fn warp() -> shuttle_warp::ShuttleWarp<(impl Reply,)> {
         // .or(set_route)
         .or(create_route)
         .or(search_route)
+        .with(cors)
         .recover(handle_error);
 
     Ok(routes.boxed().into())
@@ -116,21 +122,28 @@ fn qdrant_path(path: &str) -> AppResult<String> {
 
 // --- HANDLERS ---
 
-async fn handle_search(q: warp::hyper::body::Bytes) -> Result<impl warp::Reply, warp::Rejection> {
+async fn handle_search(q: SearchQuery) -> Result<impl warp::Reply, warp::Rejection> {
     let client = reqwest::Client::new();
     let mut body = serde_json::Map::new();
     body.insert(
         "vector".to_string(),
-        get_embedding(
-            &String::from_utf8(q.to_vec())
-                .map_err(|e| AppError::new("q to string in handle_search", e))?,
-        )
-        .await
-        .map_err(|e| AppError::new("q to string in handle_search", e))?
-        .into(),
+        get_embedding(&q.q)
+            .await
+            .map_err(|e| AppError::new("q to string in handle_search", e))?
+            .into(),
     );
     body.insert("limit".to_string(), 7.into());
-    body.insert("with_payload".to_string(), json!(["m"]));
+    body.insert("with_payload".to_string(), json!(["m", "u"]));
+    if let Some(f) = q.f {
+        let mut must = vec![];
+        for key in f.keys() {
+            if let Some(v) = f.get(key) {
+                must.push(json!({"key": key, "match": {"value": v}}))
+            }
+        }
+        body.insert("filters".into(), json!({"must": must}));
+    }
+    // println!("body: {}", serde_json::to_string(&body).unwrap());
     let res: serde_json::Value = client
         .post(qdrant_path(&format!(
             "collections/{}/points/search",
@@ -268,7 +281,7 @@ async fn handle_create(
     //     "points": [{
     //         "id": id,
     //         "payload": s,
-    //         "vector": 
+    //         "vector":
     //     }]
     // });
     let mut body = serde_json::Map::new();
@@ -277,7 +290,7 @@ async fn handle_create(
     point.insert("payload".into(), s.into());
     point.insert("vector".into(), get_embedding(&s_body).await?);
     body.insert("points".into(), json!([point]));
-    
+
     let res = reqwest::Client::new()
         .put(qdrant_path(&format!("collections/{}/points", COLLECTION))?)
         .header(
@@ -290,12 +303,12 @@ async fn handle_create(
         .send()
         .await
         .map_err(|e| AppError::new("upsert_points", e))?;
-    println!(
-        "create res: {:#?}",
-        res.text()
-            .await
-            .map_err(|e| AppError::new("res to json", e))?
-    );
+    // println!(
+    //     "create res: {:#?}",
+    //     res.text()
+    //         .await
+    //         .map_err(|e| AppError::new("res to json", e))?
+    // );
     Ok(warp::reply::with_status(
         id,
         warp::http::StatusCode::CREATED,
@@ -413,7 +426,7 @@ async fn set(client: &reqwest::Client, s: Set) -> AppResult<()> {
 // #[serde(untagged)]
 struct SearchQuery {
     q: String, // Query string
-               // l: Option<u64>,         // Limit
+    f: Option<std::collections::HashMap<String, String>>, // l: Option<u64>,         // Limit
                // r: Option<Vec<String>>, // Attributes to return
 }
 
