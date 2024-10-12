@@ -114,13 +114,15 @@ async fn warp(
     Ok(routes.boxed().into())
 }
 
-async  fn qdrant_path(path: &str) -> AppResult<String> {
+async fn qdrant_path(path: &str) -> AppResult<String> {
     Ok(format!(
         "{}/{}",
         SECRETS
             .lock()
             .await
-            .get("QDRANT_URL").ok_or("QDRANT_KEY not found in env").map_err(|_| AppError::new_plain("QDRANT_URL env var"))?,
+            .get("QDRANT_URL")
+            .ok_or("QDRANT_KEY not found in env")
+            .map_err(|_| AppError::new_plain("QDRANT_URL env var"))?,
         path
     ))
 }
@@ -156,10 +158,7 @@ async fn handle_search(q: SearchQuery) -> Result<impl warp::Reply, warp::Rejecti
     }
     // println!("body: {}", serde_json::to_string(&body).unwrap());
     let res: serde_json::Value = client
-        .post(qdrant_path(&format!(
-            "collections/{}/points/search",
-            COLLECTION
-        )).await?)
+        .post(qdrant_path(&format!("collections/{}/points/search", COLLECTION)).await?)
         .header(
             "api-key",
             SECRETS
@@ -223,10 +222,7 @@ async fn handle_delete(query: ItemQuery) -> Result<impl warp::Reply, warp::Rejec
 
     if item.u == query.u {
         client
-            .post(qdrant_path(&format!(
-                "/collections/{}/points/delete",
-                COLLECTION
-            )).await?)
+            .post(qdrant_path(&format!("/collections/{}/points/delete", COLLECTION)).await?)
             .header("Content-Type", "application/json")
             .body(format!(
                 r#"
@@ -306,7 +302,7 @@ async fn handle_create(
     point.insert("vector".into(), get_embedding(&s_body).await?);
     body.insert("points".into(), json!([point]));
 
-    // let res = 
+    // let res =
     reqwest::Client::new()
         .put(qdrant_path(&format!("collections/{}/points", COLLECTION)).await?)
         .header(
@@ -403,10 +399,7 @@ async fn get_embedding(query: &str) -> AppResult<serde_json::Value> {
 
 async fn get_point_payload(client: &reqwest::Client, i: &str) -> AppResult<Payload> {
     let response: Response = client
-        .get(qdrant_path(&format!(
-            "/collections/{}/points/{}",
-            COLLECTION, i
-        )).await?)
+        .get(qdrant_path(&format!("/collections/{}/points/{}", COLLECTION, i)).await?)
         .send()
         .await
         .map_err(|e| AppError::new("get_point request", e))?
@@ -424,10 +417,7 @@ async fn get_point_payload(client: &reqwest::Client, i: &str) -> AppResult<Paylo
 
 async fn set(client: &reqwest::Client, s: Set) -> AppResult<()> {
     client
-        .put(qdrant_path(&format!(
-            "collections/{}/points?wait",
-            COLLECTION
-        )).await?)
+        .put(qdrant_path(&format!("collections/{}/points?wait", COLLECTION)).await?)
         .body(format!(
             r#"{{points: [{{"id":"{}", "payload": {}, "vector": {}, }}]}}"#,
             s.i,
