@@ -80,15 +80,15 @@ async fn warp(
         .and(warp::query::<ItemQuery>())
         .and_then(handle_get);
 
-    let delete_route = warp::path::end()
-        .and(warp::delete())
-        .and(warp::query::<ItemQuery>())
-        .and_then(handle_delete);
+    // let delete_route = warp::path::end()
+    //     .and(warp::delete())
+    //     .and(warp::query::<ItemQuery>())
+    //     .and_then(handle_delete);
 
-    let set_route = warp::path::end()
-        .and(warp::put())
-        .and(warp::body::json::<Set>())
-        .and_then(handle_set);
+    // let set_route = warp::path::end()
+    //     .and(warp::put())
+    //     .and(warp::body::json::<Set>())
+    //     .and_then(handle_set);
 
     let create_route = warp::path::end()
         .and(warp::post())
