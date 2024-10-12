@@ -44,6 +44,118 @@ async fn warp(
     let mut secrets_ = SECRETS.lock().await;
     *secrets_ = secrets;
 
+    // let client = reqwest::Client::new();
+
+    // let index_ip_res = client
+    //     .put(
+    //         qdrant_path(&format!("collections/{}/index", COLLECTION))
+    //             .await
+    //             .unwrap(),
+    //     )
+    //     .header(
+    //         "api-key",
+    //         SECRETS
+    //             .lock()
+    //             .await
+    //             .get("QDRANT_KEY")
+    //             .ok_or("QDRANT_KEY not found in env")
+    //             .map_err(|e| AppError::new_plain(e))
+    //             .unwrap(),
+    //     )
+    //     .json(&json!({"field_name": "ip", "field_schema": "keyword"}))
+    //     .send()
+    //     .await
+    //     .unwrap();
+    // println!("index_ip_res: {:#?}", index_ip_res);
+
+    // let index_i_res = client
+    //     .put(
+    //         qdrant_path(&format!("collections/{}/index", COLLECTION))
+    //             .await
+    //             .unwrap(),
+    //     )
+    //     .header(
+    //         "api-key",
+    //         SECRETS
+    //             .lock()
+    //             .await
+    //             .get("QDRANT_KEY")
+    //             .ok_or("QDRANT_KEY not found in env")
+    //             .map_err(|e| AppError::new_plain(e))
+    //             .unwrap(),
+    //     )
+    //     .json(&json!({"field_name": "i", "field_schema": "uuid"}))
+    //     .send()
+    //     .await
+    //     .unwrap();
+    // println!("index_i_res: {:#?}", index_i_res);
+
+    // let index_a_res = client
+    //     .put(
+    //         qdrant_path(&format!("collections/{}/index", COLLECTION))
+    //             .await
+    //             .unwrap(),
+    //     )
+    //     .header(
+    //         "api-key",
+    //         SECRETS
+    //             .lock()
+    //             .await
+    //             .get("QDRANT_KEY")
+    //             .ok_or("QDRANT_KEY not found in env")
+    //             .map_err(|e| AppError::new_plain(e))
+    //             .unwrap(),
+    //     )
+    //     .json(&json!({"field_name": "u", "field_schema": "integer"}))
+    //     .send()
+    //     .await
+    //     .unwrap();
+    // println!("index_a_res: {:#?}", index_a_res);
+
+    // let index_d_res = client
+    //     .put(
+    //         qdrant_path(&format!("collections/{}/index", COLLECTION))
+    //             .await
+    //             .unwrap(),
+    //     )
+    //     .header(
+    //         "api-key",
+    //         SECRETS
+    //             .lock()
+    //             .await
+    //             .get("QDRANT_KEY")
+    //             .ok_or("QDRANT_KEY not found in env")
+    //             .map_err(|e| AppError::new_plain(e))
+    //             .unwrap(),
+    //     )
+    //     .json(&json!({"field_name": "d", "field_schema": "datetime"}))
+    //     .send()
+    //     .await
+    //     .unwrap();
+    // println!("index_d_res: {:#?}", index_d_res);
+
+    // let index_id_res = client
+    //     .put(
+    //         qdrant_path(&format!("collections/{}/index", COLLECTION))
+    //             .await
+    //             .unwrap(),
+    //     )
+    //     .header(
+    //         "api-key",
+    //         SECRETS
+    //             .lock()
+    //             .await
+    //             .get("QDRANT_KEY")
+    //             .ok_or("QDRANT_KEY not found in env")
+    //             .map_err(|e| AppError::new_plain(e))
+    //             .unwrap(),
+    //     )
+    //     .json(&json!({"field_name": "id", "field_schema": "integer"}))
+    //     .send()
+    //     .await
+    //     .unwrap();
+    // println!("index_id_res: {:#?}", index_id_res);
+
     // let mut body = serde_json::Map::new();
     // let mut vectors = serde_json::Map::new();
     // vectors.insert("distance".to_string(), "Cosine".into());
@@ -107,6 +219,10 @@ async fn warp(
         // .or(set_route)
         .or(create_route)
         .or(search_route)
+        .or(warp::path("i")
+            .and(warp::path::end())
+            .and(warp::get())
+            .and_then(i_handler))
         .with(cors)
         .recover(handle_error);
 
@@ -134,6 +250,60 @@ async fn qdrant_path(path: &str) -> AppResult<String> {
 
 // --- HANDLERS ---
 
+async fn i_handler() -> Result<impl warp::Reply, warp::Rejection> {
+    let client = reqwest::Client::new();
+    Ok(warp::reply::with_status(
+        next_i(&client).await?.to_string(),
+        warp::http::StatusCode::OK,
+    ))
+}
+
+async fn next_i(client: &reqwest::Client) -> AppResult<i64> {
+    let res: serde_json::Value = client
+        .get(qdrant_path(&format!("collections/{}/points/1", COLLECTION)).await?)
+        .header(
+            "api-key",
+            SECRETS
+                .lock()
+                .await
+                .get("QDRANT_KEY")
+                .ok_or("QDRANT_KEY not found")
+                .map_err(|e| AppError::new_plain(e))?,
+        )
+        .send()
+        .await
+        .map_err(|e| AppError::new("get_point request", e))?
+        .json()
+        .await
+        .map_err(|e| AppError::new("parse get_point response", e))?;
+
+    let initial_value: i64 = res["result"]["payload"]["u"]
+        .as_i64()
+        .ok_or(AppError::new_plain("u not found or not an integer"))?;
+
+    let mut body = serde_json::Map::new();
+    body.insert("payload".to_string(), json!({ "u": initial_value + 1 }));
+    body.insert("points".to_string(), json!("i"));
+
+    client
+        .post(qdrant_path(&format!("collections/{}/points/payload", COLLECTION)).await?)
+        .header(
+            "api-key",
+            SECRETS
+                .lock()
+                .await
+                .get("QDRANT_KEY")
+                .ok_or("QDRANT_KEY not found")
+                .map_err(|e| AppError::new_plain(e))?,
+        )
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| AppError::new("update_point request", e))?;
+
+    Ok(initial_value)
+}
+
 async fn handle_search(q: SearchQuery) -> Result<impl warp::Reply, warp::Rejection> {
     let client = reqwest::Client::new();
     let mut body = serde_json::Map::new();
@@ -147,13 +317,15 @@ async fn handle_search(q: SearchQuery) -> Result<impl warp::Reply, warp::Rejecti
     body.insert("limit".to_string(), 7.into());
     body.insert("with_payload".to_string(), json!(["m", "u"]));
     if let Some(f) = q.f {
+        println!("saw f: {:#?}", f);
         let mut must = vec![];
         for key in f.keys() {
             if let Some(v) = f.get(key) {
                 must.push(json!({"key": key, "match": {"value": v}}))
             }
         }
-        body.insert("filters".into(), json!({"must": must}));
+        println!("must: {}", serde_json::to_string(&must).unwrap());
+        body.insert("filter".to_string(), json!({"must": must}));
     }
     // println!("body: {}", serde_json::to_string(&body).unwrap());
     let res: serde_json::Value = client
@@ -167,7 +339,6 @@ async fn handle_search(q: SearchQuery) -> Result<impl warp::Reply, warp::Rejecti
                 .ok_or("QDRANT_KEY not found in env")
                 .map_err(|e| AppError::new_plain(e))?,
         )
-        .header("Content-Type", "application/json")
         .json(&body)
         .send()
         .await
@@ -280,6 +451,7 @@ async fn handle_create(
     mut s: serde_json::Value,
     addr: Option<std::net::SocketAddr>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
+    let client = reqwest::Client::new();
     let id = uuid::Uuid::now_v7().to_string();
     if let Some(a) = addr {
         s["ip"] = json!(a.ip().to_string());
@@ -302,7 +474,7 @@ async fn handle_create(
     body.insert("points".into(), json!([point]));
 
     // let res =
-    reqwest::Client::new()
+    client
         .put(qdrant_path(&format!("collections/{}/points", COLLECTION)).await?)
         .header(
             "api-key",
@@ -439,7 +611,7 @@ async fn set(client: &reqwest::Client, s: Set) -> AppResult<()> {
 // #[serde(untagged)]
 struct SearchQuery {
     q: String, // Query string
-    f: Option<std::collections::HashMap<String, String>>, // l: Option<u64>,         // Limit
+    f: Option<std::collections::HashMap<String, serde_json::Value>>, // l: Option<u64>,         // Limit
                // r: Option<Vec<String>>, // Attributes to return
 }
 
