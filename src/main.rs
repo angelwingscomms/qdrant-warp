@@ -52,7 +52,7 @@ async fn warp(
     // body.insert("vectors".to_string(), vectors.into());
 
     // let res: serde_json::Value = reqwest::Client::new()
-    //     .put(qdrant_path(&format!("collections/{}", COLLECTION)).unwrap())
+    //     .put(qdrant_path(&format!("collections/{}", COLLECTION)).await.unwrap())
     //     .header(
     //         "api-key",
     //         SECRETS.lock().await.get("QDRANT_KEY").ok_or("QDRANT_KEY not found in env")
@@ -114,10 +114,13 @@ async fn warp(
     Ok(routes.boxed().into())
 }
 
-fn qdrant_path(path: &str) -> AppResult<String> {
+async  fn qdrant_path(path: &str) -> AppResult<String> {
     Ok(format!(
         "{}/{}",
-        env::var("QDRANT_URL").map_err(|e| AppError::new("QDRANT_URL env var", e))?,
+        SECRETS
+            .lock()
+            .await
+            .get("QDRANT_URL").ok_or("QDRANT_KEY not found in env").map_err(|_| AppError::new_plain("QDRANT_URL env var"))?,
         path
     ))
 }
@@ -156,7 +159,7 @@ async fn handle_search(q: SearchQuery) -> Result<impl warp::Reply, warp::Rejecti
         .post(qdrant_path(&format!(
             "collections/{}/points/search",
             COLLECTION
-        ))?)
+        )).await?)
         .header(
             "api-key",
             SECRETS
@@ -223,7 +226,7 @@ async fn handle_delete(query: ItemQuery) -> Result<impl warp::Reply, warp::Rejec
             .post(qdrant_path(&format!(
                 "/collections/{}/points/delete",
                 COLLECTION
-            ))?)
+            )).await?)
             .header("Content-Type", "application/json")
             .body(format!(
                 r#"
@@ -305,7 +308,7 @@ async fn handle_create(
 
     // let res = 
     reqwest::Client::new()
-        .put(qdrant_path(&format!("collections/{}/points", COLLECTION))?)
+        .put(qdrant_path(&format!("collections/{}/points", COLLECTION)).await?)
         .header(
             "api-key",
             SECRETS
@@ -346,16 +349,16 @@ async fn handle_error(rejection: warp::Rejection) -> Result<impl Reply, std::con
 
 // --- REQUEST HELPERS ---
 
-async fn reqwest_client() -> Result<reqwest::Client> {
-    let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(
-        "Authorization",
-        format!("Bearer {}", SECRETS.lock().await.get("QDRANT_KEY").ok_or("QDRANT_KEY not found in env")?).parse()?,
-    );
-    Ok(reqwest::Client::builder()
-        .default_headers(headers)
-        .build()?)
-}
+// async fn reqwest_client() -> Result<reqwest::Client> {
+//     let mut headers = reqwest::header::HeaderMap::new();
+//     headers.insert(
+//         "Authorization",
+//         format!("Bearer {}", SECRETS.lock().await.get("QDRANT_KEY").ok_or("QDRANT_KEY not found in env")?).parse()?,
+//     );
+//     Ok(reqwest::Client::builder()
+//         .default_headers(headers)
+//         .build()?)
+// }
 
 async fn get_embedding(query: &str) -> AppResult<serde_json::Value> {
     let url = env::var("EMBEDDING_URL")
@@ -403,7 +406,7 @@ async fn get_point_payload(client: &reqwest::Client, i: &str) -> AppResult<Paylo
         .get(qdrant_path(&format!(
             "/collections/{}/points/{}",
             COLLECTION, i
-        ))?)
+        )).await?)
         .send()
         .await
         .map_err(|e| AppError::new("get_point request", e))?
@@ -424,7 +427,7 @@ async fn set(client: &reqwest::Client, s: Set) -> AppResult<()> {
         .put(qdrant_path(&format!(
             "collections/{}/points?wait",
             COLLECTION
-        ))?)
+        )).await?)
         .body(format!(
             r#"{{points: [{{"id":"{}", "payload": {}, "vector": {}, }}]}}"#,
             s.i,
