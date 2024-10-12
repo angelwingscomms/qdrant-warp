@@ -14,5 +14,5 @@ jobs:
         with:
           deploy-key: ${{ secrets.SHUTTLE }}
           secrets: |
-            QDRANT_KEY = '${{ secrets.QDRANT_KEY }}'
-            QDRANT_URL = '${{ secrets.QDRANT_URL }}'
+            QDRANT_KEY = "${{ secrets.QDRANT_KEY }}"
+            QDRANT_URL = "${{ secrets.QDRANT_URL }}"
