@@ -1,13 +1,18 @@
 use anyhow::Result;
 use log;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use shuttle_runtime::SecretStore;
 use std::env;
 use thiserror::Error;
+use tokio::sync::Mutex;
 use warp::{Filter, Reply};
 
 type AppResult<T> = Result<T, AppError>;
 const COLLECTION: &'static str = "i";
+static SECRETS: Lazy<Mutex<SecretStore>> =
+    Lazy::new(|| Mutex::new(SecretStore::new(std::collections::BTreeMap::new())));
 const PRIVATE: &[&str] = &[""];
 
 #[derive(Error, Debug)]
@@ -34,8 +39,11 @@ impl AppError {
 }
 
 #[shuttle_runtime::main]
-async fn warp() -> shuttle_warp::ShuttleWarp<(impl Reply,)> {
-    dotenv::dotenv().ok();
+async fn warp(
+    #[shuttle_runtime::Secrets] secrets: SecretStore,
+) -> shuttle_warp::ShuttleWarp<(impl Reply,)> {
+    let mut secrets_ = SECRETS.lock().await;
+    *secrets_ = secrets;
 
     // let mut body = serde_json::Map::new();
     // let mut vectors = serde_json::Map::new();
@@ -47,8 +55,8 @@ async fn warp() -> shuttle_warp::ShuttleWarp<(impl Reply,)> {
     //     .put(qdrant_path(&format!("collections/{}", COLLECTION)).unwrap())
     //     .header(
     //         "api-key",
-    //         std::env::var("QDRANT_KEY")
-    //             .map_err(|e| AppError::new("get QDRANT_KEY in handle_search", e))
+    //         SECRETS.lock().await.get("QDRANT_KEY").ok_or("QDRANT_KEY not found in env")
+    //             .map_err(|_| AppError::new_plain("get QDRANT_KEY in handle_search"))
     //             .unwrap(),
     //     )
     //     .json(&body)
@@ -151,8 +159,12 @@ async fn handle_search(q: SearchQuery) -> Result<impl warp::Reply, warp::Rejecti
         ))?)
         .header(
             "api-key",
-            std::env::var("QDRANT_KEY")
-                .map_err(|e| AppError::new("get QDRANT_KEY in handle_search", e))?,
+            SECRETS
+                .lock()
+                .await
+                .get("QDRANT_KEY")
+                .ok_or("QDRANT_KEY not found in env")
+                .map_err(|_| AppError::new_plain("get QDRANT_KEY in handle_search"))?,
         )
         .header("Content-Type", "application/json")
         .json(&body)
@@ -291,12 +303,17 @@ async fn handle_create(
     point.insert("vector".into(), get_embedding(&s_body).await?);
     body.insert("points".into(), json!([point]));
 
-    let res = reqwest::Client::new()
+    // let res = 
+    reqwest::Client::new()
         .put(qdrant_path(&format!("collections/{}/points", COLLECTION))?)
         .header(
             "api-key",
-            std::env::var("QDRANT_KEY")
-                .map_err(|e| AppError::new("get QDRANT_KEY in handle_create", e))?,
+            SECRETS
+                .lock()
+                .await
+                .get("QDRANT_KEY")
+                .ok_or("QDRANT_KEY not found in env")
+                .map_err(|_| AppError::new_plain("get QDRANT_KEY in handle_create"))?,
         )
         .header("Content-Type", "application/json")
         .json(&body)
@@ -329,11 +346,11 @@ async fn handle_error(rejection: warp::Rejection) -> Result<impl Reply, std::con
 
 // --- REQUEST HELPERS ---
 
-fn reqwest_client() -> Result<reqwest::Client> {
+async fn reqwest_client() -> Result<reqwest::Client> {
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(
         "Authorization",
-        format!("Bearer {}", std::env::var("QDRANT_KEY")?).parse()?,
+        format!("Bearer {}", SECRETS.lock().await.get("QDRANT_KEY").ok_or("QDRANT_KEY not found in env")?).parse()?,
     );
     Ok(reqwest::Client::builder()
         .default_headers(headers)
