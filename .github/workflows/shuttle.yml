@@ -15,4 +15,5 @@ jobs:
           deploy-key: ${{ secrets.SHUTTLE }}
           secrets: |
             QDRANT_KEY = "${{ secrets.QDRANT_KEY }}"
-            QDRANT_URL = "${{ secrets.QDRANT_URL }}"
+            QDRANT_URL = "${{ secrets.QDRANT_URL }}"            
+            EMBEDDING_URL = "${{ secrets.EMBEDDING_URL }}"

@@ -4,7 +4,6 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use shuttle_runtime::SecretStore;
-use std::env;
 use thiserror::Error;
 use tokio::sync::Mutex;
 use warp::{Filter, Reply};
@@ -56,7 +55,7 @@ async fn warp(
     //     .header(
     //         "api-key",
     //         SECRETS.lock().await.get("QDRANT_KEY").ok_or("QDRANT_KEY not found in env")
-    //             .map_err(|_| AppError::new_plain("get QDRANT_KEY in handle_search"))
+    //             .map_err(|e| AppError::new_plain(e))
     //             .unwrap(),
     //     )
     //     .json(&body)
@@ -122,7 +121,7 @@ async fn qdrant_path(path: &str) -> AppResult<String> {
             .await
             .get("QDRANT_URL")
             .ok_or("QDRANT_KEY not found in env")
-            .map_err(|_| AppError::new_plain("QDRANT_URL env var"))?,
+            .map_err(|e| AppError::new_plain(e))?,
         path
     ))
 }
@@ -166,7 +165,7 @@ async fn handle_search(q: SearchQuery) -> Result<impl warp::Reply, warp::Rejecti
                 .await
                 .get("QDRANT_KEY")
                 .ok_or("QDRANT_KEY not found in env")
-                .map_err(|_| AppError::new_plain("get QDRANT_KEY in handle_search"))?,
+                .map_err(|e| AppError::new_plain(e))?,
         )
         .header("Content-Type", "application/json")
         .json(&body)
@@ -312,7 +311,7 @@ async fn handle_create(
                 .await
                 .get("QDRANT_KEY")
                 .ok_or("QDRANT_KEY not found in env")
-                .map_err(|_| AppError::new_plain("get QDRANT_KEY in handle_create"))?,
+                .map_err(|e| AppError::new_plain(e))?,
         )
         .header("Content-Type", "application/json")
         .json(&body)
@@ -357,8 +356,11 @@ async fn handle_error(rejection: warp::Rejection) -> Result<impl Reply, std::con
 // }
 
 async fn get_embedding(query: &str) -> AppResult<serde_json::Value> {
-    let url = env::var("EMBEDDING_URL")
-        .unwrap_or_else(|_| "https://fastembedserver.shuttleapp.rs/embeddings".to_string()); // Comment: This gets the embedding URL from an env var
+    let url = SECRETS
+        .lock()
+        .await
+        .get("EMBEDDING_URL").ok_or("QDRANT_KEY not found in env")
+        .map_err(|e| AppError::new_plain(e))?;
     Ok(reqwest::Client::new()
         .post(&url)
         .json(&json!({ "input": query }))
