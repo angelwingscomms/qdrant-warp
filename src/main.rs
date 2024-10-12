@@ -359,7 +359,8 @@ async fn get_embedding(query: &str) -> AppResult<serde_json::Value> {
     let url = SECRETS
         .lock()
         .await
-        .get("EMBEDDING_URL").ok_or("QDRANT_KEY not found in env")
+        .get("EMBEDDING_URL")
+        .ok_or("QDRANT_KEY not found in env")
         .map_err(|e| AppError::new_plain(e))?;
     Ok(reqwest::Client::new()
         .post(&url)
