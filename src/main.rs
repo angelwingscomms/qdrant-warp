@@ -89,7 +89,7 @@ async fn warp(
         .or(warp::path("scroll_chats")
             .and(warp::path::end())
             .and(warp::get())
-            .and(warp::query::<String>())
+            .and(warp::query::<i64>())
             .then(handle_scroll_chats))
         .or(warp::path("ip")
             .and(warp::path::end())
@@ -480,7 +480,7 @@ async fn create(
         &qdrant_path("collections/i/points")
             .await
             .map_err(|e| AppError::new("upsert_points", e))?,
-        json!({"points": [{"id": s["i"], "vector": get_embedding(&relevant_messages).await?, "payload": {"d": s["d"]}}]}),
+        json!({"points": [{"id": s["i"], "vector": get_embedding(&relevant_messages).await?, "payload": {"d": s["d"], "c": "lucid"}}]}),
     );
     Ok(id)
 }

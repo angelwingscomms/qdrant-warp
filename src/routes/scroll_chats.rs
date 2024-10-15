@@ -19,11 +19,11 @@ pub async fn handle_scroll_chats(page: i64) -> impl Reply {
     )
 }
 
-pub async fn scroll_chats(page: i64) -> AppResult<serde_json::Value> {
+pub async fn scroll_chats(page: i64) -> AppResult<String> {
     Ok(qdrant_post(
         &qdrant_path("collections/i/points/scroll").await?,
-        json!({"offset": (page - 1) * 7,  "limit": 7}),
+        json!({"offset": (page - 1) * 7,  "limit": 7, "filter": {"must": [{"key": "c", "match": {"value": "lucid"}}]}}),
     )
     .await?["points"]
-        .clone())
+        .to_string())
 }
