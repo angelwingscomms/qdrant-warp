@@ -1,0 +1,16 @@
+collection: i
+    u: user
+    a: ip
+    i: chat_id
+    u: is_user
+    m: message
+    c: category - "m"
+    position
+    date
+            
+get_by_chat_id
+
+/a
+    page
+
+qdrant custom commands

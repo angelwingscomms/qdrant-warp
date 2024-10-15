@@ -1,41 +1,16 @@
 use anyhow::Result;
 use log;
-use once_cell::sync::Lazy;
+use qdrant_warp::constants::{COLLECTION, SECRETS};
+use qdrant_warp::{
+    app::{AppError, AppResult},
+    constants::PRIVATE,
+    qdrant::{qdrant_path, qdrant_post, qdrant_put},
+    routes::scroll_chats::{handle_scroll_chats, scroll_chats},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use shuttle_runtime::SecretStore;
-use thiserror::Error;
-use tokio::sync::Mutex;
 use warp::{Filter, Reply};
-
-type AppResult<T> = Result<T, AppError>;
-const COLLECTION: &'static str = "i";
-static SECRETS: Lazy<Mutex<SecretStore>> =
-    Lazy::new(|| Mutex::new(SecretStore::new(std::collections::BTreeMap::new())));
-const PRIVATE: &[&str] = &[""];
-
-#[derive(Error, Debug)]
-struct AppError {
-    t: String,
-}
-
-impl warp::reject::Reject for AppError {}
-impl std::fmt::Display for AppError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.t)
-    }
-}
-impl AppError {
-    fn new(m: &str, e: impl std::error::Error) -> Self {
-        AppError {
-            t: format!("{}: {}", m, e.to_string()),
-        }
-    }
-
-    fn new_plain(m: &str) -> Self {
-        AppError { t: m.to_string() }
-    }
-}
 
 #[shuttle_runtime::main]
 async fn warp(
@@ -43,144 +18,6 @@ async fn warp(
 ) -> shuttle_warp::ShuttleWarp<(impl Reply,)> {
     let mut secrets_ = SECRETS.lock().await;
     *secrets_ = secrets;
-
-    // let client = reqwest::Client::new();
-
-    // let index_ip_res = client
-    //     .put(
-    //         qdrant_path(&format!("collections/{}/index", COLLECTION))
-    //             .await
-    //             .unwrap(),
-    //     )
-    //     .header(
-    //         "api-key",
-    //         SECRETS
-    //             .lock()
-    //             .await
-    //             .get("QDRANT_KEY")
-    //             .ok_or("QDRANT_KEY not found in env")
-    //             .map_err(|e| AppError::new_plain(e))
-    //             .unwrap(),
-    //     )
-    //     .json(&json!({"field_name": "ip", "field_schema": "keyword"}))
-    //     .send()
-    //     .await
-    //     .unwrap();
-    // println!("index_ip_res: {:#?}", index_ip_res);
-
-    // let index_i_res = client
-    //     .put(
-    //         qdrant_path(&format!("collections/{}/index", COLLECTION))
-    //             .await
-    //             .unwrap(),
-    //     )
-    //     .header(
-    //         "api-key",
-    //         SECRETS
-    //             .lock()
-    //             .await
-    //             .get("QDRANT_KEY")
-    //             .ok_or("QDRANT_KEY not found in env")
-    //             .map_err(|e| AppError::new_plain(e))
-    //             .unwrap(),
-    //     )
-    //     .json(&json!({"field_name": "i", "field_schema": "uuid"}))
-    //     .send()
-    //     .await
-    //     .unwrap();
-    // println!("index_i_res: {:#?}", index_i_res);
-
-    // let index_a_res = client
-    //     .put(
-    //         qdrant_path(&format!("collections/{}/index", COLLECTION))
-    //             .await
-    //             .unwrap(),
-    //     )
-    //     .header(
-    //         "api-key",
-    //         SECRETS
-    //             .lock()
-    //             .await
-    //             .get("QDRANT_KEY")
-    //             .ok_or("QDRANT_KEY not found in env")
-    //             .map_err(|e| AppError::new_plain(e))
-    //             .unwrap(),
-    //     )
-    //     .json(&json!({"field_name": "u", "field_schema": "integer"}))
-    //     .send()
-    //     .await
-    //     .unwrap();
-    // println!("index_a_res: {:#?}", index_a_res);
-
-    // let index_d_res = client
-    //     .put(
-    //         qdrant_path(&format!("collections/{}/index", COLLECTION))
-    //             .await
-    //             .unwrap(),
-    //     )
-    //     .header(
-    //         "api-key",
-    //         SECRETS
-    //             .lock()
-    //             .await
-    //             .get("QDRANT_KEY")
-    //             .ok_or("QDRANT_KEY not found in env")
-    //             .map_err(|e| AppError::new_plain(e))
-    //             .unwrap(),
-    //     )
-    //     .json(&json!({"field_name": "d", "field_schema": "datetime"}))
-    //     .send()
-    //     .await
-    //     .unwrap();
-    // println!("index_d_res: {:#?}", index_d_res);
-
-    // let index_id_res = client
-    //     .put(
-    //         qdrant_path(&format!("collections/{}/index", COLLECTION))
-    //             .await
-    //             .unwrap(),
-    //     )
-    //     .header(
-    //         "api-key",
-    //         SECRETS
-    //             .lock()
-    //             .await
-    //             .get("QDRANT_KEY")
-    //             .ok_or("QDRANT_KEY not found in env")
-    //             .map_err(|e| AppError::new_plain(e))
-    //             .unwrap(),
-    //     )
-    //     .json(&json!({"field_name": "id", "field_schema": "integer"}))
-    //     .send()
-    //     .await
-    //     .unwrap();
-    // println!("index_id_res: {:#?}", index_id_res);
-
-    // let mut body = serde_json::Map::new();
-    // let mut vectors = serde_json::Map::new();
-    // vectors.insert("distance".to_string(), "Cosine".into());
-    // vectors.insert("size".to_string(), 1024.into());
-    // body.insert("vectors".to_string(), vectors.into());
-
-    // let res: serde_json::Value = reqwest::Client::new()
-    //     .put(qdrant_path(&format!("collections/{}", COLLECTION)).await.unwrap())
-    //     .header(
-    //         "api-key",
-    //         SECRETS.lock().await.get("QDRANT_KEY").ok_or("QDRANT_KEY not found in env")
-    //             .map_err(|e| AppError::new_plain(e))
-    //             .unwrap(),
-    //     )
-    //     .json(&body)
-    //     .send()
-    //     .await
-    //     .map_err(|e| warp::reject::custom(AppError::new("search_points request", e)))
-    //     .unwrap()
-    //     .json()
-    //     .await
-    //     .map_err(|e| warp::reject::custom(AppError::new("parse search_points response", e)))
-    //     .unwrap();
-
-    // println!("create collection res: {}", res);
 
     let cors = warp::cors()
         .allow_any_origin()
@@ -206,7 +43,7 @@ async fn warp(
         .and(warp::post())
         .and(warp::body::json::<serde_json::Value>())
         .and(warp::filters::addr::remote())
-        .and_then(handle_create);
+        .then(handle_create);
 
     let search_route = warp::path("search")
         .and(warp::path::end())
@@ -214,32 +51,59 @@ async fn warp(
         .and(warp::body::json::<SearchQuery>())
         .and_then(handle_search);
 
+    async fn handle_sip(page: i64) -> impl warp::Reply {
+        sip(page).await.map_or_else(
+            |e| {
+                log::error!("{:#?}", e);
+                warp::reply::with_status(
+                    "An error occured on our side".to_string(),
+                    warp::http::StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            },
+            |v| warp::reply::with_status(v, warp::http::StatusCode::OK),
+        )
+    }
+
+    async fn sip(page: i64) -> Result<String> {
+        Ok(qdrant_post(
+            &qdrant_path("collections/x/points/scroll").await?,
+            json!({"offset": 7 * page, "with_payload": ["d"], "order_by": {"key": "d", "direction": "desc", "limit": 7}}),
+        ).await?["points"].clone().to_string())
+    }
+
     let routes = get_route
         // .or(delete_route)
         // .or(set_route)
         .or(create_route)
         .or(search_route)
+        .or(search_route)
         .or(warp::path("i")
             .and(warp::path::end())
             .and(warp::get())
             .and_then(i_handler))
-        .with(cors)
-        .recover(handle_error);
+        .or(warp::path("groupsearch")
+            .and(warp::path::end())
+            .and(warp::post())
+            .and(warp::body::json::<GroupSearch>())
+            .and_then(handle_group_search))
+        .or(warp::path("scroll_chats")
+            .and(warp::path::end())
+            .and(warp::get())
+            .and(warp::query::<String>())
+            .then(handle_scroll_chats))
+        .or(warp::path("ip")
+            .and(warp::path::end())
+            .and(warp::post())
+            .and(warp::body::json::<ByIP>())
+            .and_then(handle_by_ip))
+        .or(warp::path("a")
+            .and(warp::path::end())
+            .and(warp::get())
+            .and(warp::query::<i64>())
+            .then(handle_sip))
+        .with(cors);
 
     Ok(routes.boxed().into())
-}
-
-async fn qdrant_path(path: &str) -> AppResult<String> {
-    Ok(format!(
-        "{}/{}",
-        SECRETS
-            .lock()
-            .await
-            .get("QDRANT_URL")
-            .ok_or("QDRANT_KEY not found in env")
-            .map_err(|e| AppError::new_plain(e))?,
-        path
-    ))
 }
 
 /*macro_rules! qdrant_path {
@@ -330,6 +194,108 @@ async fn handle_search(q: SearchQuery) -> Result<impl warp::Reply, warp::Rejecti
     // println!("body: {}", serde_json::to_string(&body).unwrap());
     let res: serde_json::Value = client
         .post(qdrant_path(&format!("collections/{}/points/search", COLLECTION)).await?)
+        .header(
+            "api-key",
+            SECRETS
+                .lock()
+                .await
+                .get("QDRANT_KEY")
+                .ok_or("QDRANT_KEY not found in env")
+                .map_err(|e| AppError::new_plain(e))?,
+        )
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| warp::reject::custom(AppError::new("search_points request", e)))?
+        .json()
+        .await
+        .map_err(|e| warp::reject::custom(AppError::new("parse search_points response", e)))?;
+
+    Ok(warp::reply::json(&res["result"]))
+    // println!("{:#?}", res);
+    // Ok(warp::reply::with_status("dir", warp::http::StatusCode::OK))
+}
+
+async fn handle_by_ip(q: ByIP) -> Result<impl warp::Reply, warp::Rejection> {
+    let res: serde_json::Value = reqwest::Client::new()
+        .post(qdrant_path("collections/i/points/query/groups").await?)
+        .header(
+            "api-key",
+            SECRETS
+                .lock()
+                .await
+                .get("QDRANT_KEY")
+                .ok_or("QDRANT_KEY not found in env")
+                .map_err(|e| AppError::new_plain(e))?,
+        )
+        .json(&json!({
+          "group_by": "ip",
+          "limit": 7,
+          "group_size": 1,
+          "order_by": [
+            {
+              "key": "d",
+              "order": "asc"
+            }
+          ],
+          "with_payload": [
+            "ip",
+          ],
+          "filter": {
+            "must": [
+              {
+                "key": "u",
+                "match": {
+                  "value": 1
+                }
+              },
+              {
+                "key": "d",
+                "range": {
+                  "gte": q.d,
+                }
+              }
+            ]
+          }
+        }))
+        .send()
+        .await
+        .map_err(|e| warp::reject::custom(AppError::new("search_points request", e)))?
+        .json()
+        .await
+        .map_err(|e| warp::reject::custom(AppError::new("parse search_points response", e)))?;
+
+    Ok(warp::reply::json(&res["result"]))
+}
+
+async fn handle_group_search(q: GroupSearch) -> Result<impl warp::Reply, warp::Rejection> {
+    let client = reqwest::Client::new();
+    let mut body = serde_json::Map::new();
+    body.insert(
+        "vector".to_string(),
+        get_embedding(&q.q)
+            .await
+            .map_err(|e| AppError::new("q to string in handle_search", e))?
+            .into(),
+    );
+    body.insert("group_by".to_string(), q.k.into());
+    body.insert("limit".to_string(), 7.into());
+    body.insert("group_size".to_string(), 1.into());
+    body.insert("with_payload".to_string(), json!(["m", "u"]));
+    if let Some(f) = q.f {
+        println!("saw f: {:#?}", f);
+        let mut must = vec![];
+        for key in f.keys() {
+            if let Some(v) = f.get(key) {
+                must.push(json!({"key": key, "match": {"value": v}}))
+            }
+        }
+        println!("must: {}", serde_json::to_string(&must).unwrap());
+        body.insert("filter".to_string(), json!({"must": must}));
+    }
+    // println!("body: {}", serde_json::to_string(&body).unwrap());
+    let res: serde_json::Value = client
+        .post(qdrant_path(&format!("collections/{}/points/search/group", COLLECTION)).await?)
         .header(
             "api-key",
             SECRETS
@@ -447,14 +413,27 @@ async fn handle_set(s: Set) -> Result<impl warp::Reply, warp::Rejection> {
     }
 }
 
-async fn handle_create(
+async fn handle_create(s: serde_json::Value, addr: Option<std::net::SocketAddr>) -> impl Reply {
+    create(s, addr).await.map_or_else(
+        |e| {
+            log::error!("{:#?}", e);
+            warp::reply::with_status(
+                "An error occured on our side".to_string(),
+                warp::http::StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        },
+        |v| warp::reply::with_status(v, warp::http::StatusCode::OK),
+    )
+}
+
+async fn create(
     mut s: serde_json::Value,
     addr: Option<std::net::SocketAddr>,
-) -> Result<impl warp::Reply, warp::Rejection> {
+) -> anyhow::Result<String> {
     let client = reqwest::Client::new();
     let id = uuid::Uuid::now_v7().to_string();
     if let Some(a) = addr {
-        s["ip"] = json!(a.ip().to_string());
+        s["a"] = json!(a.ip().to_string());
     }
     let s_body =
         serde_json::to_string(&s).map_err(|e| AppError::new("s to string in handle_create", e))?;
@@ -469,10 +448,11 @@ async fn handle_create(
     let mut body = serde_json::Map::new();
     let mut point = serde_json::Map::new();
     point.insert("id".into(), id.clone().into());
-    point.insert("payload".into(), s.into());
+    point.insert("payload".into(), s.clone().into());
     point.insert("vector".into(), get_embedding(&s_body).await?);
     body.insert("points".into(), json!([point]));
 
+    // todo - use qdrant_put
     // let res =
     client
         .put(qdrant_path(&format!("collections/{}/points", COLLECTION)).await?)
@@ -490,28 +470,19 @@ async fn handle_create(
         .send()
         .await
         .map_err(|e| AppError::new("upsert_points", e))?;
-    // println!(
-    //     "create res: {:#?}",
-    //     res.text()
-    //         .await
-    //         .map_err(|e| AppError::new("res to json", e))?
-    // );
-    Ok(warp::reply::with_status(
-        id,
-        warp::http::StatusCode::CREATED,
-    ))
-}
-
-async fn handle_error(rejection: warp::Rejection) -> Result<impl Reply, std::convert::Infallible> {
-    if let Some(error) = rejection.find::<AppError>() {
-        log::error!("{}", error.to_string());
-    } else {
-        log::error!("{:#?}", rejection);
-    }
-    Ok(warp::reply::with_status(
-        "We had an error",
-        warp::http::StatusCode::INTERNAL_SERVER_ERROR,
-    ))
+    let search_path = qdrant_path("collections/i/points/search").await?;
+    let relevant_messages: String = serde_json::to_string(qdrant_post(
+        &search_path,
+        json!({"vector": get_embedding("a question, a request for information, or a statement of desire related to AI, machine learning, data science or business automation").await?, "limit": 7, "filter": {"must": [{"key": "i", "match": {"value": s["i"]}}, {"key": "u", "match": {"value": 0}}]}, "with_payload": ["m"]}),
+    )
+    .await?["result"].as_array().ok_or("getting relevant_messages in handle_create").map_err(|e| AppError::new_plain(e))?)?;
+    qdrant_put(
+        &qdrant_path("collections/i/points")
+            .await
+            .map_err(|e| AppError::new("upsert_points", e))?,
+        json!({"points": [{"id": s["i"], "vector": get_embedding(&relevant_messages).await?, "payload": {"d": s["d"]}}]}),
+    );
+    Ok(id)
 }
 
 // --- REQUEST HELPERS ---
@@ -612,7 +583,7 @@ async fn set(client: &reqwest::Client, s: Set) -> AppResult<()> {
 struct SearchQuery {
     q: String, // Query string
     f: Option<std::collections::HashMap<String, serde_json::Value>>, // l: Option<u64>,         // Limit
-               // r: Option<Vec<String>>, // Attributes to return
+                                                                     // r: Option<Vec<String>>, // Attributes to return
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -664,4 +635,17 @@ struct Response {
     time: Option<f32>,
     status: Option<String>,
     result: Vec<ResponseResult>,
+}
+
+#[derive(Deserialize)]
+struct GroupSearch {
+    k: String,
+    q: String,
+    f: Option<std::collections::HashMap<String, serde_json::Value>>,
+}
+
+#[derive(Deserialize)]
+struct ByIP {
+    d: i64,
+    p: i64,
 }
