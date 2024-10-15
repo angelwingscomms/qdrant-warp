@@ -486,7 +486,7 @@ async fn create(
             .await
             .map_err(|e| AppError::new("upsert_points", e))?,
         json!({"points": [{"id": s["i"], "vector": get_embedding(&relevant_messages).await?, "payload": {"d": s["d"], "c": "lucid"}}]}),
-    );
+    ).await?;
     Ok(id)
 }
 
