@@ -1,11 +1,12 @@
 use anyhow::Result;
 use log;
 use qdrant_warp::constants::{COLLECTION, SECRETS};
+use qdrant_warp::routes::chat::handle_chat;
+use qdrant_warp::routes::chats::handle_chats;
 use qdrant_warp::{
     app::{AppError, AppResult},
     constants::PRIVATE,
     qdrant::{qdrant_path, qdrant_post, qdrant_put},
-    routes::scroll_chats::{handle_scroll_chats, scroll_chats},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -86,11 +87,15 @@ async fn warp(
             .and(warp::post())
             .and(warp::body::json::<GroupSearch>())
             .and_then(handle_group_search))
-        .or(warp::path("scroll_chats")
+        .or(warp::path("chats")
             .and(warp::path::end())
             .and(warp::get())
             .and(warp::query::<i64>())
-            .then(handle_scroll_chats))
+            .then(handle_chats))
+        .or(warp::path!("chat" / String)
+            .and(warp::get())
+            .and(warp::query::<i64>())
+            .then(handle_chat))
         .or(warp::path("ip")
             .and(warp::path::end())
             .and(warp::post())

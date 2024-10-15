@@ -1,1 +1,2 @@
-pub mod scroll_chats;
+pub mod chats;
+pub mod chat;
