@@ -1,11 +1,12 @@
 use anyhow::Result;
-use log;
 use qdrant_warp::constants::{COLLECTION, SECRETS};
+use qdrant_warp::routes::add::{add, Add};
 use qdrant_warp::routes::chat::chat;
 use qdrant_warp::routes::chat_from::chat_from;
 use qdrant_warp::routes::chats::chats;
 use qdrant_warp::routes::chats_from::chats_from;
 use qdrant_warp::routes::next_id::next_id;
+use qdrant_warp::util::embedding;
 use qdrant_warp::{
     app::{AppError, AppResult},
     constants::PRIVATE,
@@ -44,11 +45,11 @@ async fn warp(
     //     .and(warp::body::json::<Set>())
     //     .and_then(handle_set);
 
-    let create_route = warp::path::end()
+    let add = warp::path::end()
         .and(warp::post())
-        .and(warp::body::json::<serde_json::Value>())
+        .and(warp::body::json::<Add>())
         .and(warp::filters::addr::remote())
-        .then(handle_create);
+        .then(add);
 
     let search_route = warp::path("search")
         .and(warp::path::end())
@@ -59,7 +60,7 @@ async fn warp(
     let routes = get_route
         // .or(delete_route)
         // .or(set_route)
-        .or(create_route)
+        .or(add)
         .or(search_route)
         .or(search_route)
         .or(warp::path("i")
@@ -157,7 +158,7 @@ async fn handle_search(q: SearchQuery) -> Result<impl warp::Reply, warp::Rejecti
     let mut body = serde_json::Map::new();
     body.insert(
         "vector".to_string(),
-        get_embedding(&q.q)
+        embedding(&q.q)
             .await
             .map_err(|e| AppError::new("q to string in handle_search", e))?
             .into(),
@@ -257,7 +258,7 @@ async fn handle_group_search(q: GroupSearch) -> Result<impl warp::Reply, warp::R
     let mut body = serde_json::Map::new();
     body.insert(
         "vector".to_string(),
-        get_embedding(&q.q)
+        embedding(&q.q)
             .await
             .map_err(|e| AppError::new("q to string in handle_search", e))?
             .into(),
@@ -397,136 +398,6 @@ async fn handle_set(s: Set) -> Result<impl warp::Reply, warp::Rejection> {
     }
 }
 
-async fn handle_create(s: serde_json::Value, addr: Option<std::net::SocketAddr>) -> impl Reply {
-    create(s, addr).await.map_or_else(
-        |e| {
-            log::error!("{:#?}", e);
-            warp::reply::with_status(
-                "An error occured on our side".to_string(),
-                warp::http::StatusCode::INTERNAL_SERVER_ERROR,
-            )
-        },
-        |v| warp::reply::with_status(v, warp::http::StatusCode::OK),
-    )
-}
-
-async fn create(
-    mut s: serde_json::Value,
-    addr: Option<std::net::SocketAddr>,
-) -> anyhow::Result<String> {
-    let client = reqwest::Client::new();
-    let id = uuid::Uuid::now_v7().to_string();
-    if let Some(a) = addr {
-        s["a"] = json!(a.ip().to_string());
-    }
-    let s_body =
-        serde_json::to_string(&s).map_err(|e| AppError::new("s to string in handle_create", e))?;
-
-    // let mut body = json!({
-    //     "points": [{
-    //         "id": id,
-    //         "payload": s,
-    //         "vector":
-    //     }]
-    // });
-    let mut body = serde_json::Map::new();
-    let mut point = serde_json::Map::new();
-    point.insert("id".into(), id.clone().into());
-    point.insert("payload".into(), s.clone().into());
-    point.insert("vector".into(), get_embedding(&s_body).await?);
-    body.insert("points".into(), json!([point]));
-
-    // todo - use qdrant_put
-    // let res =
-    client
-        .put(qdrant_path(&format!("collections/{}/points", COLLECTION)).await?)
-        .header(
-            "api-key",
-            SECRETS
-                .lock()
-                .await
-                .get("QDRANT_KEY")
-                .ok_or("QDRANT_KEY not found in env")
-                .map_err(|e| AppError::new_plain(e))?,
-        )
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| AppError::new("upsert_points", e))?;
-    let search_path = qdrant_path("collections/i/points/search").await?;
-    let relevant_messages: String = serde_json::to_string(qdrant_post(
-        &search_path,
-        json!({"vector": get_embedding("a question, a request for information, or a statement of desire related to AI, machine learning, data science or business automation").await?, "limit": 7, "filter": {"must": [{"key": "i", "match": {"value": s["i"]}}, {"key": "u", "match": {"value": 0}}]}, "with_payload": ["m"]}),
-    )
-    .await?["result"].as_array().ok_or("getting relevant_messages in handle_create").map_err(|e| AppError::new_plain(e))?)?;
-    qdrant_put(
-        &qdrant_path("collections/i/points")
-            .await
-            .map_err(|e| AppError::new("upsert_points", e))?,
-        json!({"points": [{"id": s["i"], "vector": get_embedding(&relevant_messages).await?, "payload": {"d": s["d"], "c": "lucid"}}]}),
-    ).await?;
-    Ok(id)
-}
-
-// --- REQUEST HELPERS ---
-
-// async fn reqwest_client() -> Result<reqwest::Client> {
-//     let mut headers = reqwest::header::HeaderMap::new();
-//     headers.insert(
-//         "Authorization",
-//         format!("Bearer {}", SECRETS.lock().await.get("QDRANT_KEY").ok_or("QDRANT_KEY not found in env")?).parse()?,
-//     );
-//     Ok(reqwest::Client::builder()
-//         .default_headers(headers)
-//         .build()?)
-// }
-
-async fn get_embedding(query: &str) -> AppResult<serde_json::Value> {
-    let url = SECRETS
-        .lock()
-        .await
-        .get("EMBEDDING_URL")
-        .ok_or("QDRANT_KEY not found in env")
-        .map_err(|e| AppError::new_plain(e))?;
-    Ok(reqwest::Client::new()
-        .post(&url)
-        .json(&json!({ "input": query }))
-        .send()
-        .await
-        .map_err(|e| AppError::new("sending get_embedding request", e))?
-        .json::<serde_json::Value>()
-        .await
-        .map_err(|e| AppError::new("parsing get_embedding response to json", e))?["data"][0]
-        ["embedding"]
-        .clone())
-}
-
-/*async fn get_embedding_vec(query: &str) -> AppResult<Vec<f32>> {
-    let url = env::var("EMBEDDING_URL")
-        .unwrap_or_else(|_| "https://fastembedserver.shuttleapp.rs/embeddings".to_string()); // Comment: This gets the embedding URL from an env var
-    Ok(reqwest::Client::new()
-        .post(&url)
-        .json(&json!({ "input": query }))
-        .send()
-        .await
-        .map_err(|e| AppError::new("sending get_embedding request", e))?
-        .json::<serde_json::Value>()
-        .await
-        .map_err(|e| AppError::new("parsing get_embedding response to json", e))?["data"][0]
-        ["embedding"]
-        .clone()
-        .as_array()
-        .ok_or_else(|| AppError::new_plain("Failed to get embedding array"))?
-        .iter()
-        .map(|v| {
-            Ok(v.as_f64()
-                .ok_or_else(|| AppError::new_plain("Failed to convert embedding value to f64"))?
-                as f32)
-        })
-        .collect::<Result<Vec<f32>, AppError>>()?)
-} */
-
 async fn get_point_payload(client: &reqwest::Client, i: &str) -> AppResult<Payload> {
     let response: Response = client
         .get(qdrant_path(&format!("/collections/{}/points/{}", COLLECTION, i)).await?)
@@ -552,15 +423,13 @@ async fn set(client: &reqwest::Client, s: Set) -> AppResult<()> {
             r#"{{points: [{{"id":"{}", "payload": {}, "vector": {}, }}]}}"#,
             s.i,
             s.v,
-            get_embedding(&s.v).await?.to_string()
+            embedding(&s.v).await?.to_string()
         ))
         .send()
         .await
         .map_err(|e| AppError::new("upsert_points", e))?;
     Ok(())
 }
-
-// --- STRUCTS ---
 
 #[derive(Deserialize)]
 // #[serde(untagged)]
