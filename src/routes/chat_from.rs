@@ -6,7 +6,7 @@ use crate::{
     qdrant::{qdrant_path, qdrant_post},
 };
 
-pub async fn chat_from(id: String, from: String) -> impl Reply {
+pub async fn chat_from(id: String, from: i64) -> impl Reply {
     f(id, from).await.map_or_else(
         |e| {
             log::error!("{:#?}", e);
@@ -19,10 +19,10 @@ pub async fn chat_from(id: String, from: String) -> impl Reply {
     )
 }
 
-pub async fn f(id: String, from: String) -> AppResult<String> {
+pub async fn f(id: String, from: i64) -> AppResult<String> {
     Ok(qdrant_post(
         &qdrant_path("collections/i/points/scroll").await?,
-        json!({"limit": 7, "order_by": {"key": "d", "direction": "desc", "start_from": from}, "filter": {"must_not": {"key": "d", }, "must": [{"key": "c", "match": {"value": "scm"}}, {"key": "i", "match": {"value": id}}]}}),
+        json!({"limit": 7, "offset": (from - 1) * 7, "filter": {"must_not": {"key": "d", }, "must": [{"key": "c", "match": {"value": "scm"}}, {"key": "i", "match": {"value": id}}]}}),
     )
     .await?["result"]["points"]
         .to_string())

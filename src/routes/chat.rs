@@ -22,7 +22,7 @@ pub async fn chat(id: String) -> impl Reply {
 pub async fn f(id: String) -> AppResult<String> {
     Ok(qdrant_post(
         &qdrant_path("collections/i/points/scroll").await?,
-        json!({"limit": 7, "order_by": {"key": "d", "direction": "desc"}, "filter": {"must": [{"key": "c", "match": {"value": "scm"}}, {"key": "i", "match": {"value": id}}]}}),
+        json!({"limit": 7,  "filter": {"must": [{"key": "c", "match": {"value": "scm"}}, {"key": "i", "match": {"value": id}}]}}),
     )
     .await?["result"]["points"]
         .to_string())
