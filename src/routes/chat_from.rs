@@ -6,8 +6,8 @@ use crate::{
     qdrant::{qdrant_path, qdrant_post},
 };
 
-pub async fn chats() -> impl Reply {
-    f().await.map_or_else(
+pub async fn chat_from(id: String, from: String) -> impl Reply {
+    f(id, from).await.map_or_else(
         |e| {
             log::error!("{:#?}", e);
             warp::reply::with_status(
@@ -19,12 +19,11 @@ pub async fn chats() -> impl Reply {
     )
 }
 
-pub async fn f() -> AppResult<String> {
-    let res = qdrant_post(
+pub async fn f(id: String, from: String) -> AppResult<String> {
+    Ok(qdrant_post(
         &qdrant_path("collections/i/points/scroll").await?,
-        json!({"limit": 7, "order_by": {"key": "d", "direction": "desc"}, "filter": {"must": [{"key": "c", "match": {"value": "lucid"}}]}}),
+        json!({"limit": 7, "order_by": {"key": "d", "direction": "desc", "start_from": from}, "filter": {"must_not": {"key": "d", }, "must": [{"key": "c", "match": {"value": "scm"}}, {"key": "i", "match": {"value": id}}]}}),
     )
-    .await?;
-    println!("chats res: {}", res);
-    Ok(res["result"]["points"].to_string())
+    .await?["result"]["points"]
+        .to_string())
 }

@@ -1,12 +1,16 @@
 use anyhow::Result;
 use log;
 use qdrant_warp::constants::{COLLECTION, SECRETS};
-use qdrant_warp::routes::chat::handle_chat;
-use qdrant_warp::routes::chats::handle_chats;
+use qdrant_warp::routes::chat::chat;
+use qdrant_warp::routes::chat_from::chat_from;
+use qdrant_warp::routes::chats::chats;
+use qdrant_warp::routes::chats_from::chats_from;
+use qdrant_warp::routes::next_id::next_id;
 use qdrant_warp::{
     app::{AppError, AppResult},
     constants::PRIVATE,
     qdrant::{qdrant_path, qdrant_post, qdrant_put},
+    util::random_embedding,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -52,26 +56,6 @@ async fn warp(
         .and(warp::body::json::<SearchQuery>())
         .and_then(handle_search);
 
-    async fn handle_sip(page: i64) -> impl warp::Reply {
-        sip(page).await.map_or_else(
-            |e| {
-                log::error!("{:#?}", e);
-                warp::reply::with_status(
-                    "An error occured on our side".to_string(),
-                    warp::http::StatusCode::INTERNAL_SERVER_ERROR,
-                )
-            },
-            |v| warp::reply::with_status(v, warp::http::StatusCode::OK),
-        )
-    }
-
-    async fn sip(page: i64) -> Result<String> {
-        Ok(qdrant_post(
-            &qdrant_path("collections/x/points/scroll").await?,
-            json!({"offset": 7 * page, "with_payload": ["d"], "order_by": {"key": "d", "direction": "desc", "limit": 7}}),
-        ).await?["points"].clone().to_string())
-    }
-
     let routes = get_route
         // .or(delete_route)
         // .or(set_route)
@@ -87,25 +71,20 @@ async fn warp(
             .and(warp::post())
             .and(warp::body::json::<GroupSearch>())
             .and_then(handle_group_search))
-        .or(warp::path("chats")
-            .and(warp::path::end())
+        .or(warp::path!("chats").and(warp::get()).then(chats))
+        .or(warp::path!("chats" / String)
             .and(warp::get())
-            .and(warp::query::<i64>())
-            .then(handle_chats))
-        .or(warp::path!("chat" / String)
+            .then(chats_from))
+        .or(warp::path!("chat" / String).and(warp::get()).then(chat))
+        .or(warp::path!("chat_from" / String / String)
             .and(warp::get())
-            .and(warp::query::<i64>())
-            .then(handle_chat))
+            .then(chat_from))
+        .or(warp::path("i").and(warp::get()).then(next_id))
         .or(warp::path("ip")
             .and(warp::path::end())
             .and(warp::post())
             .and(warp::body::json::<ByIP>())
             .and_then(handle_by_ip))
-        .or(warp::path("a")
-            .and(warp::path::end())
-            .and(warp::get())
-            .and(warp::query::<i64>())
-            .then(handle_sip))
         .with(cors);
 
     Ok(routes.boxed().into())
